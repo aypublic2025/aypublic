@@ -457,29 +457,51 @@ function saveGasUrl(){
   else toast('❌ URL이 비어있습니다.');
 }
 
-async function fetchFromGas(){
+/* ── JSONP 방식으로 GAS GET 요청 (file:// CORS 우회) ── */
+function fetchFromGas(){
   if(!gasUrl){toast('Apps Script URL이 설정되지 않았습니다.');return;}
   const status=document.getElementById('url-status');
   status.innerHTML='<span style="color:#7c3aed;">🔄 데이터 불러오는 중...</span>';
-  try{
-    const resp=await fetch(gasUrl,{method:'GET',mode:'cors'});
-    const json=await resp.json();
-    let count=0;
-    Object.entries(json).forEach(([orgCode,entry])=>{
-      if(entry.data){
-        orgsData[orgCode]={data:entry.data,syncedAt:entry.syncedAt||'',source:'gas'};
-        count++;
+
+  return new Promise((resolve)=>{
+    const callbackName='gasCallback_'+Date.now();
+    const script=document.createElement('script');
+
+    window[callbackName]=function(json){
+      delete window[callbackName];
+      if(script.parentNode) script.parentNode.removeChild(script);
+      try{
+        let count=0;
+        Object.entries(json).forEach(([orgCode,entry])=>{
+          if(entry.data){
+            orgsData[orgCode]={data:entry.data,syncedAt:entry.syncedAt||'',source:'gas'};
+            count++;
+          }
+        });
+        saveLocal();
+        status.innerHTML=`<span style="color:#2d6a4f;">✅ ${count}개 단체 데이터 불러오기 완료</span>`;
+        renderDashboard();
+        document.getElementById('last-refresh').textContent='최근 갱신: '+fmtDateTime(new Date().toISOString());
+        toast(`✅ ${count}개 단체 데이터 갱신 완료`);
+      }catch(err){
+        status.innerHTML=`<span style="color:#dc2626;">❌ 데이터 파싱 오류: ${err.message}</span>`;
+        toast('❌ 데이터 파싱 오류');
       }
-    });
-    saveLocal();
-    status.innerHTML=`<span style="color:#2d6a4f;">✅ ${count}개 단체 데이터 불러오기 완료</span>`;
-    renderDashboard();
-    document.getElementById('last-refresh').textContent='최근 갱신: '+fmtDateTime(new Date().toISOString());
-    toast(`✅ ${count}개 단체 데이터 갱신 완료`);
-  }catch(e){
-    status.innerHTML=`<span style="color:#dc2626;">❌ 불러오기 실패: ${e.message} (CORS 오류 시 JSON 방식 사용)</span>`;
-    toast('❌ 데이터 불러오기 실패');
-  }
+      resolve();
+    };
+
+    script.onerror=function(){
+      delete window[callbackName];
+      if(script.parentNode) script.parentNode.removeChild(script);
+      status.innerHTML=`<span style="color:#dc2626;">❌ 불러오기 실패 — GAS 배포 설정 확인 (액세스: 모든 사용자)</span>`;
+      toast('❌ 데이터 불러오기 실패');
+      resolve();
+    };
+
+    const sep=gasUrl.includes('?')?'&':'?';
+    script.src=gasUrl+sep+'callback='+callbackName;
+    document.head.appendChild(script);
+  });
 }
 
 function refreshData(){

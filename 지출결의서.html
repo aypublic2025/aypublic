@@ -897,7 +897,7 @@ async function syncToCenter(){
   try{
     await fetch(url,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'text/plain'}, // no-cors 모드에서는 text/plain만 허용
       body:JSON.stringify({
         orgCode:settings.orgCode||'UNKNOWN',
         orgName:settings.orgName||'',
